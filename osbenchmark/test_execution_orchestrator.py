@@ -264,6 +264,7 @@ def execute_test(cfg, sources=False, distribution=False, external=False, docker=
     try:
         result = actor_system.ask(benchmark_actor, Setup(cfg, sources, distribution, external, docker))
         print("protobuf - skip result parse")
+        print(result)
 #         if isinstance(result, Success):
 #             logger.info("Benchmark has finished successfully.")
 #         # may happen if one of the load generators has detected that the user has cancelled the benchmark.
