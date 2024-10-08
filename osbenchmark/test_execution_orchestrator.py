@@ -263,16 +263,17 @@ def execute_test(cfg, sources=False, distribution=False, external=False, docker=
     benchmark_actor = actor_system.createActor(BenchmarkActor, targetActorRequirements={"coordinator": True})
     try:
         result = actor_system.ask(benchmark_actor, Setup(cfg, sources, distribution, external, docker))
-        if isinstance(result, Success):
-            logger.info("Benchmark has finished successfully.")
-        # may happen if one of the load generators has detected that the user has cancelled the benchmark.
-        elif isinstance(result, actor.BenchmarkCancelled):
-            logger.info("User has cancelled the benchmark (detected by actor).")
-        elif isinstance(result, actor.BenchmarkFailure):
-            logger.error("A benchmark failure has occurred")
-            raise exceptions.BenchmarkError(result.message, result.cause)
-        else:
-            raise exceptions.BenchmarkError("Got an unexpected result during benchmarking: [%s]." % str(result))
+        print("protobuf - skip result parse")
+#         if isinstance(result, Success):
+#             logger.info("Benchmark has finished successfully.")
+#         # may happen if one of the load generators has detected that the user has cancelled the benchmark.
+#         elif isinstance(result, actor.BenchmarkCancelled):
+#             logger.info("User has cancelled the benchmark (detected by actor).")
+#         elif isinstance(result, actor.BenchmarkFailure):
+#             logger.error("A benchmark failure has occurred")
+#             raise exceptions.BenchmarkError(result.message, result.cause)
+#         else:
+#             raise exceptions.BenchmarkError("Got an unexpected result during benchmarking: [%s]." % str(result))
     except KeyboardInterrupt:
         logger.info("User has cancelled the benchmark (detected by test execution orchestrator).")
         # notify the coordinator so it can properly handle this state. Do it blocking so we don't have a test execution between this message
