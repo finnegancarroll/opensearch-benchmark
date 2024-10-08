@@ -1724,6 +1724,9 @@ class WorkloadSpecificationReader:
             # may as well an inline operation
             op = self.parse_operation(op_spec, error_ctx="inline operation in test_procedure %s" % test_procedure_name)
 
+
+
+
         schedule = self._r(task_spec, "schedule", error_ctx=op.name, mandatory=False)
         task_name = self._r(task_spec, "name", error_ctx=op.name, mandatory=False, default_value=op.name)
         task = workload.Task(name=task_name,
@@ -1751,6 +1754,14 @@ class WorkloadSpecificationReader:
             self._error(
                 "Operation '%s' in test_procedure '%s' defines a warmup time period of '%d' seconds and '%d' iterations. Please do not "
                         "mix time periods and iterations." % (op.name, test_procedure_name, task.warmup_time_period, task.iterations))
+
+        # print("PRINTING TASK VARS: " + str(task_name))
+        # print("task.iterations: " + str(task.iterations))
+        # print("task.warmup_iterations: " + str(task.warmup_iterations))
+        # print("task.warmup_time_period: " + str(task.warmup_time_period))
+        # print("task.time_period: " + str(task.time_period))
+
+        # task.iterations = 100
 
         return task
 

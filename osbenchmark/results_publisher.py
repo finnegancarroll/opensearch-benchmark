@@ -171,6 +171,7 @@ class SummaryResultsPublisher:
 
 
         for record in stats.op_metrics:
+            print("ITERATING THROUGH RECORDS: " + str(record))
             task = record["task"]
             is_task_part_of_throughput_testing = re.search(throughput_pattern, task)
             if is_task_part_of_throughput_testing:
@@ -183,6 +184,7 @@ class SummaryResultsPublisher:
                     record_with_best_throughput = record
 
             else:
+                print("PUBLISHING OP STATS")
                 self.publish_operational_statistics(metrics_table=metrics_table, warnings=warnings, record=record, task=task)
 
         # The following code is run when the clients_list parameter is specified and publishes the max throughput.
