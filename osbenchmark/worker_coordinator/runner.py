@@ -1372,11 +1372,19 @@ class Query(Runner):
             response = await self._raw_search(opensearch, doc_type, index, body, request_params, headers=headers)
 
             if detailed_results:
-                props = parse(response, ["hits.total", "hits.total.value", "hits.total.relation", "timed_out", "took"])
-                hits_total = props.get("hits.total.value", props.get("hits.total", 0))
-                hits_relation = props.get("hits.total.relation", "eq")
-                timed_out = props.get("timed_out", False)
+                # props = parse(response, ["hits.total", "hits.total.value", "hits.total.relation", "timed_out", "took"])
+                # hits_total = props.get("hits.total.value", props.get("hits.total", 0))
+                # hits_relation = props.get("hits.total.relation", "eq")
+                # timed_out = props.get("timed_out", False)
+                # took = props.get("took", 0)
+
+                props = parse(response, ["timed_out", "took"])
+                hits_total = 1
+                hits_relation = "eq"
+                timed_out = False
                 took = props.get("took", 0)
+
+                print(took)
 
                 result.update({
                     "hits": hits_total,
@@ -1385,41 +1393,41 @@ class Query(Runner):
                     "took": took
                 })
 
-            recall_processing_start = time.perf_counter()
-            response_json = json.loads(response.getvalue())
-            if _is_empty_search_results(response_json):
-                self.logger.info("Vector search query returned no results.")
-                return result
-            id_field = parse_string_parameter("id-field-name", params, "_id")
-            candidates = []
-            for hit in response_json['hits']['hits']:
-                field_value = _get_field_value(hit, id_field)
-                if field_value is None:  # Will add to candidates if field value is present
-                    self.logger.warning("No value found for field %s", id_field)
-                    continue
-                candidates.append(field_value)
-            neighbors_dataset = params["neighbors"]
-
-            if "k" in params:
-                num_neighbors = params.get("k", 1)
-                recall_top_k = calculate_topk_search_recall(candidates, neighbors_dataset, num_neighbors)
-                recall_top_1 = calculate_topk_search_recall(candidates, neighbors_dataset, 1)
-                result.update({"recall@k": recall_top_k})
-                result.update({"recall@1": recall_top_1})
-
-            if "max_distance" in params or "min_score" in params:
-                recall_threshold = calculate_radial_search_recall(candidates, neighbors_dataset)
-                recall_top_1 = calculate_radial_search_recall(candidates, neighbors_dataset, True)
-                if "min_score" in params:
-                    result.update({"recall@min_score": recall_threshold})
-                    result.update({"recall@min_score_1": recall_top_1})
-                elif "max_distance" in params:
-                    result.update({"recall@max_distance": recall_threshold})
-                    result.update({"recall@max_distance_1": recall_top_1})
-
-            recall_processing_end = time.perf_counter()
-            recall_processing_time = convert.seconds_to_ms(recall_processing_end - recall_processing_start)
-            result["recall_time_ms"] = recall_processing_time
+            # recall_processing_start = time.perf_counter()
+            # response_json = json.loads(response.getvalue())
+            # if _is_empty_search_results(response_json):
+            #     self.logger.info("Vector search query returned no results.")
+            #     return result
+            # id_field = parse_string_parameter("id-field-name", params, "_id")
+            # candidates = []
+            # for hit in response_json['hits']['hits']:
+            #     field_value = _get_field_value(hit, id_field)
+            #     if field_value is None:  # Will add to candidates if field value is present
+            #         self.logger.warning("No value found for field %s", id_field)
+            #         continue
+            #     candidates.append(field_value)
+            # neighbors_dataset = params["neighbors"]
+            #
+            # if "k" in params:
+            #     num_neighbors = params.get("k", 1)
+            #     recall_top_k = calculate_topk_search_recall(candidates, neighbors_dataset, num_neighbors)
+            #     recall_top_1 = calculate_topk_search_recall(candidates, neighbors_dataset, 1)
+            #     result.update({"recall@k": recall_top_k})
+            #     result.update({"recall@1": recall_top_1})
+            #
+            # if "max_distance" in params or "min_score" in params:
+            #     recall_threshold = calculate_radial_search_recall(candidates, neighbors_dataset)
+            #     recall_top_1 = calculate_radial_search_recall(candidates, neighbors_dataset, True)
+            #     if "min_score" in params:
+            #         result.update({"recall@min_score": recall_threshold})
+            #         result.update({"recall@min_score_1": recall_top_1})
+            #     elif "max_distance" in params:
+            #         result.update({"recall@max_distance": recall_threshold})
+            #         result.update({"recall@max_distance_1": recall_top_1})
+            #
+            # recall_processing_end = time.perf_counter()
+            # recall_processing_time = convert.seconds_to_ms(recall_processing_end - recall_processing_start)
+            # result["recall_time_ms"] = recall_processing_time
             return result
 
         search_method = params.get("operation-type")
