@@ -1450,7 +1450,11 @@ class Query(Runner):
             components.append(index)
         if doc_type:
             components.append(doc_type)
-        components.append("_search")
+
+        # components.append("_search")
+        print("SUB PROTO SEARCH")
+        components.append("_search_protobuf")
+
         path = "/".join(components)
         request_context_holder.on_client_request_start()
         response = await opensearch.transport.perform_request("GET", "/" + path, params=params, body=body, headers=headers)
