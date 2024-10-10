@@ -785,6 +785,10 @@ class PartitionBulkIndexParamSource:
 
         all_bulks = number_of_bulks(self.corpora, start_index, end_index, self.total_partitions, self.bulk_size)
         self.total_bulks = math.ceil((all_bulks * self.ingest_percentage) / 100)
+        print("INGEST PARAMS:")
+        print("self.total_bulks: " + str(self.total_bulks))
+        print("all_bulks: " + str(all_bulks))
+        print("self.ingest_percentage: " + str(self.ingest_percentage))
 
     @property
     def percent_completed(self):
