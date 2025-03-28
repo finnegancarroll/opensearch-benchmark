@@ -518,11 +518,15 @@ class BulkIndex(Runner):
         request_context_holder.on_client_request_start()
 
         if with_action_metadata:
+            # SWAP REST CLIENT FOR PROTO
+            self.proto_bulk(bulk_params)
             api_kwargs.pop("index", None)
             # only half of the lines are documents
             response = await opensearch.bulk(params=bulk_params, **api_kwargs)
         else:
-            response = await opensearch.bulk(doc_type=params.get("type"), params=bulk_params, **api_kwargs)
+            print("Exit on this branch - No doc_type")
+            exit()
+            # response = await opensearch.bulk(doc_type=params.get("type"), params=bulk_params, **api_kwargs)
 
         request_context_holder.on_client_request_end()
         stats = self.detailed_stats(params, response) if detailed_results else self.simple_stats(bulk_size, unit, response)
@@ -536,6 +540,38 @@ class BulkIndex(Runner):
         if not stats["success"]:
             meta_data["error-type"] = "bulk"
         return meta_data
+
+    ########################################################################################################
+    ########################################################################################################
+    ####                                        PROTO BULK                                              ####
+    ########################################################################################################
+    ########################################################################################################
+
+    def proto_bulk(self, params):
+        import json
+        import grpc
+        from opensearch_protos.protos.schemas import document_pb2
+        from opensearch_protos.document_service_pb2_grpc import DocumentServiceStub
+
+        with grpc.insecure_channel('localhost:9400') as PROTO_CHANNEL:
+            PROTO_DOC_STUB = DocumentServiceStub(PROTO_CHANNEL)
+            print("SEND PROTO BULK REQUEST")
+
+            request = document_pb2.BulkRequest()
+            request.index = "test-index"
+            index_op = document_pb2.BulkRequestBody()
+            index_operation = document_pb2.IndexOperation()
+            index_operation.id = "doc1"
+            index_operation.index = "test-index"
+            index_op.index.CopyFrom(index_operation)
+            doc_data = {"title": "Test Document", "content": "This is a test document"}
+            index_op.doc = json.dumps(doc_data).encode('utf-8')
+            request.request_body.append(index_op)
+            request.refresh = document_pb2.BulkRequest.Refresh.REFRESH_TRUE
+            request.timeout = "30s"
+
+            response = PROTO_DOC_STUB.Bulk(request)
+            print(response)
 
     def detailed_stats(self, params, response):
         ops = {}
