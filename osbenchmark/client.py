@@ -363,8 +363,14 @@ class OsClientFactory:
         self.client_options["serializer"] = LazyJSONSerializer()
         self.client_options["trace_config"] = trace_config
 
-        class BenchmarkAsyncOpenSearch(opensearchpy.AsyncOpenSearch, RequestContextHolder):
+        ##### SWAP IN PROTO CLIENT #####
+        # class BenchmarkAsyncOpenSearch(opensearchpy.AsyncOpenSearch, RequestContextHolder):
+        #     pass
+
+        from osbenchmark import proto_client
+        class BenchmarkAsyncOpenSearch(proto_client.ProtobufBenchmarkAsyncOpenSearch, RequestContextHolder):
             pass
+        ##### SWAP IN PROTO CLIENT #####
 
         if "amazon_aws_log_in" not in self.client_options:
             return BenchmarkAsyncOpenSearch(hosts=self.hosts,
@@ -381,7 +387,6 @@ class OsClientFactory:
                                         connection_class=osbenchmark.async_connection.AsyncHttpConnection,
                                         use_ssl=True, verify_certs=True, http_auth=aws_auth,
                                         **self.client_options)
-
 
 def wait_for_rest_layer(opensearch, max_attempts=40):
     """

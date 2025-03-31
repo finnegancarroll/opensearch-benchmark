@@ -518,26 +518,22 @@ class BulkIndex(Runner):
         request_context_holder.on_client_request_start()
 
         if with_action_metadata:
-            ##### SWAP REST FOR PROTO #####
-            # response = await opensearch.bulk(params=bulk_params, **api_kwargs)
-            response = self.proto_bulk(api_kwargs)
-            ##### SWAP REST FOR PROTO #####
-
+            await opensearch.bulk(params=bulk_params, **api_kwargs)
             api_kwargs.pop("index", None)
         else:
-            ##### NO ACTION METADATA #####
-            # response = await opensearch.bulk(doc_type=params.get("type"), params=bulk_params, **api_kwargs)
+            response = await opensearch.bulk(doc_type=params.get("type"), params=bulk_params, **api_kwargs)
             self.logger.debug("PROTO ERR - No doc_type")
-            ##### NO ACTION METADATA #####
 
         request_context_holder.on_client_request_end()
 
+        #########################################################################
         ##### STATS RELIES ON PARSING JSON RESPONSE - SWAP WITH PROTO STATS #####
+
         # stats = self.detailed_stats(params, response) if detailed_results else self.simple_stats(bulk_size, unit, response)
 
-        # Fill in simple stats of the form:
+        # For now we are going to receive a BulkResponse protobuf object
+        # From this fill in simple stats dict of the form:
         # {'took': 81, 'success': True, 'success-count': 500, 'error-count': 0}
-
         respSuccess = None
         which_field = response.WhichOneof('response')
         if which_field == 'bulk_response_body':
@@ -558,6 +554,7 @@ class BulkIndex(Runner):
         }
 
         ##### STATS RELIES ON PARSING JSON RESPONSE - SWAP WITH PROTO STATS #####
+        #########################################################################
 
         meta_data = {
             "index": params.get("index"),
@@ -568,51 +565,6 @@ class BulkIndex(Runner):
         if not stats["success"]:
             meta_data["error-type"] = "bulk"
         return meta_data
-
-    ########################################################################################################
-    ########################################################################################################
-    ####                                        PROTO BULK                                              ####
-    ########################################################################################################
-    ########################################################################################################
-
-    def proto_bulk(self, bulk_args):
-        import grpc
-        from opensearch_protos.protos.schemas import document_pb2
-        from opensearch_protos.document_service_pb2_grpc import DocumentServiceStub
-
-        reqBody = bulk_args['body']
-        strReqBody = reqBody.decode('utf-8')
-        lineSplitBody = strReqBody.split('\n')
-
-        lineList = []
-        opList = []
-        docList = []
-        indexPattern = '{"index":'
-        for lineBody in lineSplitBody:
-            lineList.append(lineBody)
-            if indexPattern in lineBody:
-                opList.append(lineBody)
-            else:
-                docList.append(lineBody)
-
-        # Remove empty line at end of body - Naive parsing doesn't catch final \n
-        docList = docList[:-1]
-
-        request = document_pb2.BulkRequest()
-        request.index = bulk_args["index"]
-        for doc in docList:
-            requestBody = document_pb2.BulkRequestBody()
-            requestBody.doc = doc.encode('utf-8')
-            index_op = document_pb2.IndexOperation()
-            requestBody.index.CopyFrom(index_op)
-            request.request_body.append(requestBody)
-
-        with grpc.insecure_channel('localhost:9400') as PROTO_CHANNEL:
-            PROTO_DOC_STUB = DocumentServiceStub(PROTO_CHANNEL)
-            return PROTO_DOC_STUB.Bulk(request)
-
-    ########################################################################################################
-    ########################################################################################################
 
     def detailed_stats(self, params, response):
         ops = {}
