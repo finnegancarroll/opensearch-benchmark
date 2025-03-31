@@ -518,7 +518,7 @@ class BulkIndex(Runner):
         request_context_holder.on_client_request_start()
 
         if with_action_metadata:
-            await opensearch.bulk(params=bulk_params, **api_kwargs)
+            response = await opensearch.bulk(params=bulk_params, **api_kwargs)
             api_kwargs.pop("index", None)
         else:
             response = await opensearch.bulk(doc_type=params.get("type"), params=bulk_params, **api_kwargs)
