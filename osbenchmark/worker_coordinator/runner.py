@@ -518,18 +518,46 @@ class BulkIndex(Runner):
         request_context_holder.on_client_request_start()
 
         if with_action_metadata:
-            # SWAP REST CLIENT FOR PROTO
-            self.proto_bulk(bulk_params)
+            ##### SWAP REST FOR PROTO #####
+            # response = await opensearch.bulk(params=bulk_params, **api_kwargs)
+            response = self.proto_bulk(api_kwargs)
+            ##### SWAP REST FOR PROTO #####
+
             api_kwargs.pop("index", None)
-            # only half of the lines are documents
-            response = await opensearch.bulk(params=bulk_params, **api_kwargs)
         else:
-            print("Exit on this branch - No doc_type")
-            exit()
+            ##### NO ACTION METADATA #####
             # response = await opensearch.bulk(doc_type=params.get("type"), params=bulk_params, **api_kwargs)
+            self.logger.debug("PROTO ERR - No doc_type")
+            ##### NO ACTION METADATA #####
 
         request_context_holder.on_client_request_end()
-        stats = self.detailed_stats(params, response) if detailed_results else self.simple_stats(bulk_size, unit, response)
+
+        ##### STATS RELIES ON PARSING JSON RESPONSE - SWAP WITH PROTO STATS #####
+        # stats = self.detailed_stats(params, response) if detailed_results else self.simple_stats(bulk_size, unit, response)
+
+        # Fill in simple stats of the form:
+        # {'took': 81, 'success': True, 'success-count': 500, 'error-count': 0}
+
+        respSuccess = None
+        which_field = response.WhichOneof('response')
+        if which_field == 'bulk_response_body':
+            respSuccess = response.bulk_response_body
+        elif which_field == 'bulk_error_response':
+            print(response.bulk_error_response)
+            self.logger.debug("PROTO ERR - Error bulk response")
+            exit()  # Exit on any error
+        else:
+            self.logger.debug("PROTO ERR - No OneOf set in response")
+            exit()  # Exit on any error
+
+        stats = {
+            "took": respSuccess.took,
+            "success": not respSuccess.errors,  # true if an op failed
+            "success-count": bulk_size,
+            "error-count": 0  # We will exit() on any error
+        }
+
+        ##### STATS RELIES ON PARSING JSON RESPONSE - SWAP WITH PROTO STATS #####
 
         meta_data = {
             "index": params.get("index"),
@@ -547,31 +575,44 @@ class BulkIndex(Runner):
     ########################################################################################################
     ########################################################################################################
 
-    def proto_bulk(self, params):
-        import json
+    def proto_bulk(self, bulk_args):
         import grpc
         from opensearch_protos.protos.schemas import document_pb2
         from opensearch_protos.document_service_pb2_grpc import DocumentServiceStub
 
+        reqBody = bulk_args['body']
+        strReqBody = reqBody.decode('utf-8')
+        lineSplitBody = strReqBody.split('\n')
+
+        lineList = []
+        opList = []
+        docList = []
+        indexPattern = '{"index":'
+        for lineBody in lineSplitBody:
+            lineList.append(lineBody)
+            if indexPattern in lineBody:
+                opList.append(lineBody)
+            else:
+                docList.append(lineBody)
+
+        # Remove empty line at end of body - Naive parsing doesn't catch final \n
+        docList = docList[:-1]
+
+        request = document_pb2.BulkRequest()
+        request.index = bulk_args["index"]
+        for doc in docList:
+            requestBody = document_pb2.BulkRequestBody()
+            requestBody.doc = doc.encode('utf-8')
+            index_op = document_pb2.IndexOperation()
+            requestBody.index.CopyFrom(index_op)
+            request.request_body.append(requestBody)
+
         with grpc.insecure_channel('localhost:9400') as PROTO_CHANNEL:
             PROTO_DOC_STUB = DocumentServiceStub(PROTO_CHANNEL)
-            print("SEND PROTO BULK REQUEST")
+            return PROTO_DOC_STUB.Bulk(request)
 
-            request = document_pb2.BulkRequest()
-            request.index = "test-index"
-            index_op = document_pb2.BulkRequestBody()
-            index_operation = document_pb2.IndexOperation()
-            index_operation.id = "doc1"
-            index_operation.index = "test-index"
-            index_op.index.CopyFrom(index_operation)
-            doc_data = {"title": "Test Document", "content": "This is a test document"}
-            index_op.doc = json.dumps(doc_data).encode('utf-8')
-            request.request_body.append(index_op)
-            request.refresh = document_pb2.BulkRequest.Refresh.REFRESH_TRUE
-            request.timeout = "30s"
-
-            response = PROTO_DOC_STUB.Bulk(request)
-            print(response)
+    ########################################################################################################
+    ########################################################################################################
 
     def detailed_stats(self, params, response):
         ops = {}
