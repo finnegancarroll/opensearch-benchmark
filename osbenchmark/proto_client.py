@@ -12,10 +12,13 @@ from opensearch_protos.document_service_pb2_grpc import DocumentServiceStub
 #########################################
 
 class ProtobufBenchmarkAsyncOpenSearch(AsyncOpenSearch):
+    async def bulk(self, body = None, index = None, params = None, headers = None):
+        return self.bulk_proto(body=body, index=index, params=params, headers=headers)
+
     """
     Replace REST client bulk with proto call to gRPC transport
     """
-    async def bulk(self, body = None, index = None, params = None, headers = None):
+    def bulk_proto(self, body = None, index = None, params = None, headers = None):
         lineSplitBody = body.decode('utf-8').split('\n')
         lineList = []
         opList = []
@@ -50,13 +53,11 @@ class ProtobufBenchmarkAsyncOpenSearch(AsyncOpenSearch):
     # To ease testing for this POC intercept params and save pickle them
     # """
     # async def bulk(self, body = None, index = None, params = None, headers = None):
-    #     self.pickle_input("body", body)
-    #     self.pickle_input("index", index)
-    #     self.pickle_input("params", params)
-    #     self.pickle_input("headers", headers)
+    #     pickle_input("body", body)
+    #     pickle_input("index", index)
+    #     pickle_input("params", params)
+    #     pickle_input("headers", headers)
     #     exit()
-    #
-
 
 #########################################
 #########################################

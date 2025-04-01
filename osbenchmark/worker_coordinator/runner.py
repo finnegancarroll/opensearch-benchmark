@@ -515,7 +515,9 @@ class BulkIndex(Runner):
         # errors have occurred we only need a small amount of information from the potentially large response.
         if not detailed_results:
             opensearch.return_raw_response()
+
         request_context_holder.on_client_request_start()
+        request_context_holder.on_request_start()
 
         if with_action_metadata:
             response = await opensearch.bulk(params=bulk_params, **api_kwargs)
@@ -524,6 +526,7 @@ class BulkIndex(Runner):
             response = await opensearch.bulk(doc_type=params.get("type"), params=bulk_params, **api_kwargs)
             self.logger.debug("PROTO ERR - No doc_type")
 
+        request_context_holder.on_request_end()
         request_context_holder.on_client_request_end()
 
         #########################################################################
