@@ -29,6 +29,7 @@ import json
 import logging
 import random
 import re
+import string
 import sys
 import threading
 import time
@@ -44,6 +45,7 @@ from typing import List, Optional
 
 import grpc
 import ijson
+from numpy.core.defchararray import isnumeric
 from opensearch_protos.protos.services.document_service_pb2_grpc import DocumentServiceStub
 from opensearch_protos.protos.services.search_service_pb2_grpc import SearchServiceStub
 from opensearchpy import ConnectionTimeout
@@ -1162,7 +1164,17 @@ class Query(Runner):
 
         async def _request_body_query(opensearch, params):
             doc_type = params.get("type")
-
+            if os.environ.get("OSB_INFLATE_TERMS") is not None and isnumeric(os.environ.get("OSB_INFLATE_TERMS")):
+                add_terms = int(os.environ.get("OSB_INFLATE_TERMS"))
+                characters = string.ascii_letters + string.digits
+                random_str_len = 10
+                param_terms = params.get("body").get("query").get("terms")
+                query_field = next(iter(param_terms.keys()))
+                for i in range(0, add_terms - len(param_terms.get(query_field))):
+                    params.get("body").get("query").get("terms").get(query_field).append(
+                        ''.join(random.choice(characters) for _ in range(random_str_len))
+                    )
+            
             r = await self._raw_search(opensearch, doc_type, index, body, request_params, headers=headers)
 
             if detailed_results:
