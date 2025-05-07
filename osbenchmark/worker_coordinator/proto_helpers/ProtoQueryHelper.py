@@ -1,3 +1,8 @@
+import os
+import random
+import string
+
+from numpy.core.defchararray import isnumeric
 from opensearch_protos.protos.schemas import search_pb2
 from opensearch_protos.protos.schemas import common_pb2
 
@@ -50,7 +55,16 @@ def _parse_terms_from_query(query):
     terms = _get_terms_dict(query)
     if len(terms.keys()) > 1:
         raise Exception("Error parsing query - Term query contains multiple distinct fields: " + str(query))
+
     term_field = next(iter(terms.keys()))
+
+    if os.environ.get("OSB_INFLATE_TERMS") is not None and isnumeric(os.environ.get("OSB_INFLATE_TERMS")):
+        add_terms = int(os.environ.get("OSB_INFLATE_TERMS"))
+        characters = string.ascii_letters + string.digits
+        random_str_len = 10
+        for i in range(0, add_terms):
+            terms[term_field].append(''.join(random.choice(characters) for _ in range(random_str_len)))
+
     terms_array = common_pb2.StringArray(string_array=terms[term_field])
     terms_lookup_map = common_pb2.TermsLookupFieldStringArrayMap(string_array=terms_array)
     return common_pb2.TermsQueryField(terms_lookup_field_string_array_map={term_field: terms_lookup_map})
