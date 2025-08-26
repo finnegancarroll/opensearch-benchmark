@@ -61,6 +61,7 @@ class ProtoKNNQueryHelper:
             query=query_cont
         )
 
+        print(source)
         src_config = common_pb2.SourceConfigParam(
             bool_value=source,
         )
