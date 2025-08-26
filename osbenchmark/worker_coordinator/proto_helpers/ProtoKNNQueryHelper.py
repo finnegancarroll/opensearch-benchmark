@@ -64,9 +64,9 @@ class ProtoKNNQueryHelper:
         search_req = search_pb2.SearchRequest(
             index=index,
             request_body=req_body,
-            size=size
-            # source=source,
-            # request_cache=cache,
+            size=size,
+            source=source,
+            request_cache=cache
         )
 
         # search_req = search_pb2.SearchRequest(
