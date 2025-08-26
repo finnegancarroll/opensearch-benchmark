@@ -61,9 +61,9 @@ class ProtoKNNQueryHelper:
             query=query_cont
         )
 
-        print(source)
+        source_bool = False if source is "false" else True
         src_config = common_pb2.SourceConfigParam(
-            bool_value=source,
+            bool_value=source_bool,
         )
 
         search_req = search_pb2.SearchRequest(
