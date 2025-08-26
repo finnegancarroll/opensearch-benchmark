@@ -53,17 +53,33 @@ class ProtoKNNQueryHelper:
             k=k
         )
 
-        search_req = search_pb2.SearchRequest(
-            request_body=search_pb2.SearchRequestBody(
-                query=common_pb2.QueryContainer(
-                    knn=knn_query_proto
-                )
-            ),
-            index=index,
-            source=source,
-            request_cache=cache,
-            size=size
+        query_cont = common_pb2.QueryContainer(
+            knn=knn_query_proto
         )
+
+        req_body = search_pb2.SearchRequestBody(
+            query=query_cont
+        )
+
+        search_req = search_pb2.SearchRequest(
+            index=index,
+            request_body=req_body,
+            size=size
+            # source=source,
+            # request_cache=cache,
+        )
+
+        # search_req = search_pb2.SearchRequest(
+        #     request_body=search_pb2.SearchRequestBody(
+        #         query=common_pb2.QueryContainer(
+        #             knn=knn_query_proto
+        #         )
+        #     ),
+        #     index=index,
+        #     source=source,
+        #     request_cache=cache,
+        #     size=size
+        # )
 
         return search_req
 
