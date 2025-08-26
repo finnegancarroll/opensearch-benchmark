@@ -61,11 +61,15 @@ class ProtoKNNQueryHelper:
             query=query_cont
         )
 
+        src_config = common_pb2.SourceConfigParam(
+            bool_value=source,
+        )
+
         search_req = search_pb2.SearchRequest(
             index=index,
             request_body=req_body,
             size=size,
-            source=source,
+            source=src_config,
             request_cache=cache
         )
 
