@@ -187,7 +187,7 @@ class AWSProvider(CloudProvider):
 
         return client_options
 
-    def create_client(self, hosts, client_options, client_class=None, use_async=False):
+    def create_client(self, hosts, client_options, client_class=None, use_async=False, ssl_context=None):
         self.logger.info("client options %s", client_options)
         if client_options['amazon_aws_log_in'] == "session":
             credentials = boto3.Session().get_credentials()
@@ -196,14 +196,28 @@ class AWSProvider(CloudProvider):
                                     secret_key=self.aws_log_in_config["aws_secret_access_key"],
                                     token=self.aws_log_in_config["aws_session_token"])
 
+        # Strip SSL kwargs that are handled via ssl_context or conflict with connection classes
+        for k in ("use_ssl", "verify_certs", "ca_certs", "amazon_aws_log_in", "region", "service",
+                  "retry-on-timeout", "aws_access_key_id", "aws_secret_access_key", "aws_session_token",
+                  "serializer", "trace_config"):
+            client_options.pop(k, None)
+
         if use_async:
             aws_auth = opensearchpy.AWSV4SignerAsyncAuth(credentials, self.aws_log_in_config["region"],
                                                      self.aws_log_in_config["service"])
-            return client_class(hosts=hosts, use_ssl=True, verify_certs=True, http_auth=aws_auth,
+            if ssl_context is not None:
+                return client_class(hosts=hosts, ssl_context=ssl_context, scheme="https", http_auth=aws_auth,
+                                            connection_class=async_connection.AsyncHttpConnection,
+                                            **client_options)
+            return client_class(hosts=hosts, use_ssl=True, http_auth=aws_auth,
                                         connection_class=async_connection.AsyncHttpConnection,
                                         **client_options)
         else:
             aws_auth = opensearchpy.Urllib3AWSV4SignerAuth(credentials, self.aws_log_in_config["region"],
                                                     self.aws_log_in_config["service"])
-            return opensearchpy.OpenSearch(hosts=hosts, use_ssl=True, verify_certs=True, http_auth=aws_auth,
+            if ssl_context is not None:
+                return opensearchpy.OpenSearch(hosts=hosts, ssl_context=ssl_context, scheme="https",
+                                            http_auth=aws_auth,
+                                            connection_class=opensearchpy.Urllib3HttpConnection)
+            return opensearchpy.OpenSearch(hosts=hosts, use_ssl=True, http_auth=aws_auth,
                                         connection_class=opensearchpy.Urllib3HttpConnection)

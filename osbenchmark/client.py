@@ -22,6 +22,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import hashlib
 import logging
 import time
 
@@ -31,6 +32,8 @@ import urllib3
 from urllib3.util.ssl_ import is_ipaddress
 
 import grpc
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
 from opensearch.protobufs.services.document_service_pb2_grpc import DocumentServiceStub
 from opensearch.protobufs.services.search_service_pb2_grpc import SearchServiceStub
 
@@ -169,7 +172,7 @@ class OsClientFactory:
     def create(self):
         if self.provider:
             self.logger.info("Creating OpenSearch client with provider %s", self.provider)
-            return self.provider.create_client(self.hosts, self.client_options)
+            return self.provider.create_client(self.hosts, self.client_options, ssl_context=self.ssl_context)
 
         else:
             return opensearchpy.OpenSearch(hosts=self.hosts, ssl_context=self.ssl_context, **self.client_options)
@@ -210,7 +213,8 @@ class OsClientFactory:
         if self.provider:
             self.logger.info("Creating OpenSearch Async Client with provider %s", self.provider)
             return self.provider.create_client(self.hosts, self.client_options,
-                                               client_class=BenchmarkAsyncOpenSearch, use_async=True)
+                                               client_class=BenchmarkAsyncOpenSearch, use_async=True,
+                                               ssl_context=self.ssl_context)
         else:
             return BenchmarkAsyncOpenSearch(hosts=self.hosts,
                                             connection_class=async_connection.AIOHttpConnection,
@@ -282,6 +286,68 @@ class MessageProducerFactory:
             raise ValueError(f"Unsupported ingestion source type: {producer_type}")
 
 
+class GrpcSigV4Interceptor(grpc.aio.UnaryUnaryClientInterceptor,
+                           grpc.aio.UnaryStreamClientInterceptor):
+    """
+    gRPC client interceptor that adds AWS SigV4 authentication headers to each request.
+    Signs the serialized protobuf request body, matching the server-side expectation that
+    x-amz-content-sha256 is the SHA256 of the protobuf bytes (not UNSIGNED-PAYLOAD).
+    """
+
+    GRPC_PATHS = {
+        '/org.opensearch.protobufs.services.DocumentService/Bulk': 'bulk',
+        '/org.opensearch.protobufs.services.SearchService/Search': 'search',
+    }
+
+    def __init__(self, credentials, region, service='es'):
+        self.credentials = credentials
+        self.region = region
+        self.service = service
+        self.logger = logging.getLogger(__name__)
+
+    def _sign(self, host, grpc_path, request_bytes):
+        payload_hash = hashlib.sha256(request_bytes).hexdigest()
+        url = f"https://{host}{grpc_path}"
+        aws_request = AWSRequest(
+            method='POST',
+            url=url,
+            data=request_bytes,
+            headers={'host': host, 'x-amz-content-sha256': payload_hash}
+        )
+        SigV4Auth(self.credentials, self.service, self.region).add_auth(aws_request)
+        return [(k.lower(), v) for k, v in aws_request.headers.items()]
+
+    async def intercept_unary_unary(self, continuation, client_call_details, request):
+        client_call_details = self._add_auth_metadata(client_call_details, request)
+        return await continuation(client_call_details, request)
+
+    async def intercept_unary_stream(self, continuation, client_call_details, request):
+        client_call_details = self._add_auth_metadata(client_call_details, request)
+        return await continuation(client_call_details, request)
+
+    def _add_auth_metadata(self, client_call_details, request):
+        grpc_path = client_call_details.method
+        if isinstance(grpc_path, bytes):
+            grpc_path = grpc_path.decode('utf-8')
+        if grpc_path not in self.GRPC_PATHS:
+            return client_call_details
+
+        host = client_call_details.credentials or ""  # fallback; host set at channel level
+        request_bytes = request.SerializeToString()
+
+        signed_headers = self._sign(self._host, grpc_path, request_bytes)
+        existing = list(client_call_details.metadata or [])
+        existing.extend(signed_headers)
+
+        return grpc.aio.ClientCallDetails(
+            method=client_call_details.method,
+            timeout=client_call_details.timeout,
+            metadata=existing,
+            credentials=client_call_details.credentials,
+            wait_for_ready=client_call_details.wait_for_ready,
+        )
+
+
 class GrpcClientFactory:
     """
     Factory for creating gRPC client stubs.
@@ -289,8 +355,11 @@ class GrpcClientFactory:
     Sub channels manage the underlying connection with the server. When the global sub channel pool is used gRPC will
     re-use sub channels and their underlying connections which does not appropriately reflect a multi client scenario.
     """
-    def __init__(self, grpc_hosts):
+    def __init__(self, grpc_hosts, aws_credentials=None, aws_region=None, aws_service='es'):
         self.grpc_hosts = grpc_hosts
+        self.aws_credentials = aws_credentials
+        self.aws_region = aws_region
+        self.aws_service = aws_service
         self.logger = logging.getLogger(__name__)
         self.grpc_channel_options = [
             ('grpc.use_local_subchannel_pool', 1),
@@ -314,12 +383,27 @@ class GrpcClientFactory:
         host = self.grpc_hosts.all_hosts["default"][0]
         grpc_addr = f"{host['host']}:{host['port']}"
 
-        self.logger.info("Creating gRPC channel for cluster default cluster at %s", grpc_addr)
-        channel = grpc.aio.insecure_channel(
-            target=grpc_addr,
-            options=self.grpc_channel_options,
-            compression=None
-        )
+        interceptors = []
+        if self.aws_credentials:
+            interceptor = GrpcSigV4Interceptor(self.aws_credentials, self.aws_region, self.aws_service)
+            interceptor._host = host['host']
+            interceptors.append(interceptor)
+            self.logger.info("gRPC SigV4 signing enabled for %s (service=%s, region=%s)",
+                             grpc_addr, self.aws_service, self.aws_region)
+            channel = grpc.aio.secure_channel(
+                target=grpc_addr,
+                credentials=grpc.ssl_channel_credentials(),
+                options=self.grpc_channel_options,
+                interceptors=interceptors,
+            )
+        else:
+            self.logger.info("Creating gRPC channel for cluster default cluster at %s", grpc_addr)
+            channel = grpc.aio.insecure_channel(
+                target=grpc_addr,
+                options=self.grpc_channel_options,
+                compression=None,
+                interceptors=interceptors,
+            )
 
         # Retain a reference to underlying channel in our stubs dictionary for graceful shutdown.
         stubs["default"] = {
@@ -397,7 +481,28 @@ class UnifiedClientFactory:
         grpc_stubs = None
 
         if self.grpc_hosts:
-            grpc_factory = GrpcClientFactory(self.grpc_hosts)
+            # Reuse AWS credentials from the REST provider if available
+            provider = self.rest_client_factory.provider
+            aws_credentials = None
+            aws_region = None
+            aws_service = 'es'
+            if provider and hasattr(provider, 'aws_log_in_config') and provider.aws_log_in_config:
+                import boto3
+                from botocore.credentials import Credentials as BotoCredentials
+                cfg = provider.aws_log_in_config
+                if cfg.get('aws_access_key_id'):
+                    aws_credentials = BotoCredentials(
+                        access_key=cfg['aws_access_key_id'],
+                        secret_key=cfg['aws_secret_access_key'],
+                        token=cfg.get('aws_session_token'),
+                    )
+                else:
+                    # session mode
+                    aws_credentials = boto3.Session().get_credentials()
+                aws_region = cfg.get('region')
+                aws_service = cfg.get('service', 'es')
+
+            grpc_factory = GrpcClientFactory(self.grpc_hosts, aws_credentials, aws_region, aws_service)
             grpc_stubs = grpc_factory.create_grpc_stubs()
 
         return UnifiedClient(opensearch_client, grpc_stubs)

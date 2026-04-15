@@ -3266,6 +3266,7 @@ class ProtoBulkIndex(Runner):
         stub = opensearch.document_service()
         RequestContextHolder.on_request_start()
         bulk_resp = await stub.Bulk(proto_req)
+
         RequestContextHolder.on_request_end()
         RequestContextHolder.on_client_request_end()
         return ProtoBulkHelper.build_stats(bulk_resp, params)
